@@ -53,10 +53,10 @@ public class RectMinerMod {
     private static final int BLOCK_HEIGHT = 2;
     private static final int STUCK_TIMEOUT = 20 * 45;
 
-    private static final double MINING_REACH = 1.5D;
+    private static final double MINING_REACH = 2.0D;
 
     // Distancia horizontal a partir de la cual puede avanzar.
-    private static final double WALK_DISTANCE = 1.4D;
+    private static final double WALK_DISTANCE = 0.0D;
 
     // Giro máximo por tick.
     private static final float MAX_TURN_PER_TICK = 12.0F;
