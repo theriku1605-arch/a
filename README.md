@@ -23,4 +23,4 @@ Es un mod pensado para ejecutarse en el cliente. No requiere añadir este mod al
 5. Si termina en verde, abre la ejecución y descarga el artefacto `RectMiner-1.7.10` en **Artifacts**. El JAR está dentro del ZIP descargado.
 6. Si falla, abre el paso **Build mod** y comparte el error completo. ForgeGradle 1.2 es muy antiguo y pueden surgir incompatibilidades externas; el flujo automatizado no garantiza una compilación correcta hasta que termine con éxito.
 
-El flujo espera que `build.gradle`, `settings.gradle`, `src` y `.github` estén en la raíz del repositorio. Se cambió a ForgeGradle 1.2.11 desde JitPack para evitar la URL antigua de Minecraft que provocaba `FileNotFoundException` en `:downloadClient`, y usa Gradle 4.4.1 con Java 8. No puedo afirmar que compila hasta que GitHub Actions termine en verde.
+El flujo espera que `build.gradle`, `settings.gradle`, `src` y `.github` estén en la raíz del repositorio. Se cambió a ForgeGradle 1.2.11 desde JitPack para evitar la URL antigua de Minecraft que provocaba `FileNotFoundException` en `:downloadClient`, y usa Gradle 2.14.1 con Java 8. No puedo afirmar que compila hasta que GitHub Actions termine en verde.
