@@ -56,7 +56,7 @@ public class RectMinerMod {
     private static final double MINING_REACH = 4.5D;
 
     // Distancia horizontal a partir de la cual puede avanzar.
-    private static final double WALK_DISTANCE = 2.2D;
+    private static final double WALK_DISTANCE = 0.4D;
 
     // Giro máximo por tick.
     private static final float MAX_TURN_PER_TICK = 12.0F;
