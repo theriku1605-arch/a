@@ -1,0 +1,16 @@
+[
+  {
+    "modid": "rectminer",
+    "name": "RectMiner",
+    "description": "Cliente experimental para automatizar minería en una zona marcada.",
+    "version": "0.1.0",
+    "mcversion": "1.7.10",
+    "authorList": ["OpenAI"],
+    "credits": "Prototipo experimental",
+    "url": "",
+    "updateUrl": "",
+    "logoFile": "",
+    "screenshots": [],
+    "dependencies": []
+  }
+]
