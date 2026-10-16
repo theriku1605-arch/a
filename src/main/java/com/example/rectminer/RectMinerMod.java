@@ -149,6 +149,8 @@ public class RectMinerMod {
                 stop("No quedan bloques sólidos detectables en la zona.");
                 return;
             }
+
+            chat("Objetivo: " + currentTarget);
         }
 
         double px = MC.thePlayer.posX;
@@ -185,57 +187,55 @@ public class RectMinerMod {
             MC.thePlayer.rayTrace(5.0D, 1.0F);
 
         if (distance > 4.25D) {
-            // Acercarse al objetivo sin mantener el ataque
-            // como una tecla física.
             setForward(true);
+            MC.playerController.resetBlockRemoving();
             ticksWithoutProgress++;
-
-        } else {
-            setForward(false);
-
-            if (hit != null
-                && hit.typeOfHit
-                    == MovingObjectPosition.MovingObjectType.BLOCK) {
-
-                Pos hp = new Pos(
-                    hit.blockX,
-                    hit.blockY,
-                    hit.blockZ
-                );
-
-                if (currentTarget.equals(hp)
-                    && inArea(hp)
-                    && !isAir(MC.theWorld, hp)) {
-
-                    Block block = MC.theWorld.getBlock(
-                        hp.x, hp.y, hp.z
-                    );
-
-                    if (block != null
-                        && !block.getMaterial().isLiquid()) {
-
-                        /*
-                         * Mantener el mismo bloque seleccionado.
-                         * onPlayerDamageBlock gestiona el avance
-                         * de la rotura en el controlador vanilla.
-                         */
-                        MC.playerController.onPlayerDamageBlock(
-                            hp.x, hp.y, hp.z, hit.sideHit
-                        );
-
-                        MC.thePlayer.swingItem();
-                        targetTicks++;
-                        ticksWithoutProgress++;
-                    }
-                }
-            }
+            return;
         }
 
-        if (targetTicks > 20 * 30) {
-            stop(
-                "Objetivo atascado. Se detuvo por seguridad."
+        setForward(false);
+
+        if (hit != null
+            && hit.typeOfHit
+                == MovingObjectPosition.MovingObjectType.BLOCK
+            && hit.blockX == currentTarget.x
+            && hit.blockY == currentTarget.y
+            && hit.blockZ == currentTarget.z
+            && !isAir(MC.theWorld, currentTarget)) {
+
+            Block block = MC.theWorld.getBlock(
+                currentTarget.x,
+                currentTarget.y,
+                currentTarget.z
             );
-            return;
+
+            if (block != null && !block.getMaterial().isLiquid()) {
+                MC.playerController.onPlayerDamageBlock(
+                    currentTarget.x,
+                    currentTarget.y,
+                    currentTarget.z,
+                    hit.sideHit
+                );
+
+                MC.thePlayer.swingItem();
+
+                targetTicks++;
+                ticksWithoutProgress = 0;
+
+                // 30 ticks = 1,5 segundos a 20 TPS.
+                if (targetTicks >= 30
+                    && !isAir(MC.theWorld, currentTarget)) {
+
+                    MC.playerController.resetBlockRemoving();
+                    targetTicks = 0;
+
+                    chat(
+                        "Reintentando bloque: " + currentTarget
+                    );
+                }
+            }
+        } else {
+            ticksWithoutProgress++;
         }
 
         if (ticksWithoutProgress > 20 * 45) {
@@ -280,6 +280,7 @@ public class RectMinerMod {
     private void stop(String message) {
         running = false;
         currentTarget = null;
+        targetTicks = 0;
         setForward(false);
 
         if (MC.thePlayer != null) {
@@ -382,7 +383,6 @@ public class RectMinerMod {
             pressed
         );
 
-        // Evitar que el ataque quede forzado como una tecla.
         KeyBinding.setKeyBindState(
             MC.gameSettings.keyBindAttack.getKeyCode(),
             false
