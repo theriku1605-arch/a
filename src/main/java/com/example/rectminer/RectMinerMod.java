@@ -140,6 +140,7 @@ public class RectMinerMod {
 
         if (currentTarget == null
             || isAir(MC.theWorld, currentTarget)) {
+
             currentTarget = findNearestSolidInArea();
             ticksWithoutProgress = 0;
 
@@ -181,8 +182,8 @@ public class RectMinerMod {
         MC.thePlayer.rotationYaw = yaw;
         MC.thePlayer.rotationPitch = pitch;
 
-        // Solo caminar si el objetivo está lejos.
-        // No se activa el ataque automático.
+        // RectMiner solo orienta y mueve al jugador.
+        // El minado lo realiza el autoclick externo.
         if (distance > 4.25D) {
             setForward(true);
         } else {
@@ -332,11 +333,9 @@ public class RectMinerMod {
             pressed
         );
 
-        // RectMiner nunca fuerza el ataque.
-        KeyBinding.setKeyBindState(
-            MC.gameSettings.keyBindAttack.getKeyCode(),
-            false
-        );
+        // No modificar keyBindAttack.
+        // Así RectMiner no interfiere directamente
+        // con el ataque ni con el autoclick externo.
 
         if (!pressed) {
             KeyBinding.setKeyBindState(
