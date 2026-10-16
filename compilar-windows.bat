@@ -20,14 +20,14 @@ if errorlevel 1 (
 where gradle >nul 2>nul
 if errorlevel 1 (
   echo ERROR: No se encuentra Gradle en PATH.
-  echo Instala Gradle 2.14.1 y vuelve a ejecutar este archivo.
+  echo Instala Gradle 4.4.1 y vuelve a ejecutar este archivo.
   pause
   exit /b 1
 )
 gradle --version
 echo.
 echo Compilando RectMiner...
-gradle --no-daemon build
+gradle --no-daemon --stacktrace build
 if errorlevel 1 (
   echo.
   echo ERROR: La compilacion fallo. Copia el mensaje de error completo.

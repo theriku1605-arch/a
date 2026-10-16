@@ -2,9 +2,12 @@ buildscript {
     repositories {
         mavenCentral()
         maven { name = "forge"; url = "https://maven.minecraftforge.net/" }
+        maven { url = "https://jitpack.io" }
     }
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:1.2-SNAPSHOT'
+        // El ForgeGradle original intenta descargar Minecraft desde una URL S3 antigua.
+        // Esta versión mantenida corrige esa descarga para proyectos Forge 1.7.10.
+        classpath 'com.github.GTNewHorizons:ForgeGradle:1.2.11'
     }
 }
 
