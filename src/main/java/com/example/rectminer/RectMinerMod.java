@@ -42,6 +42,7 @@ public class RectMinerMod {
 
     private boolean running;
     private int ticksWithoutProgress;
+    private int targetTicks;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -74,10 +75,7 @@ public class RectMinerMod {
         ClientRegistry.registerKeyBinding(toggleKey);
         ClientRegistry.registerKeyBinding(stopKey);
 
-        // Los eventos de teclado de Forge 1.7.10 usan el bus de FML.
         FMLCommonHandler.instance().bus().register(this);
-
-        // Los ticks del cliente usan el bus de MinecraftForge.
         MinecraftForge.EVENT_BUS.register(this);
     }
 
@@ -141,8 +139,10 @@ public class RectMinerMod {
             return;
         }
 
-        if (currentTarget == null || isAir(MC.theWorld, currentTarget)) {
+        if (currentTarget == null
+            || isAir(MC.theWorld, currentTarget)) {
             currentTarget = findNearestSolidInArea();
+            targetTicks = 0;
             ticksWithoutProgress = 0;
 
             if (currentTarget == null) {
@@ -164,14 +164,17 @@ public class RectMinerMod {
         double dy = ty - py;
         double dz = tz - pz;
 
-        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
+        double distance = Math.sqrt(
+            dx * dx + dy * dy + dz * dz
+        );
 
         float yaw = (float) (
             Math.atan2(dz, dx) * 180.0D / Math.PI
         ) - 90.0F;
 
         float pitch = (float) (
-            -Math.atan2(dy, Math.sqrt(dx * dx + dz * dz))
+            -Math.atan2(dy, horizontalDistance)
             * 180.0D / Math.PI
         );
 
@@ -181,7 +184,13 @@ public class RectMinerMod {
         MovingObjectPosition hit =
             MC.thePlayer.rayTrace(5.0D, 1.0F);
 
-        if (distance <= 4.25D) {
+        if (distance > 4.25D) {
+            // Acercarse al objetivo sin mantener el ataque
+            // como una tecla física.
+            setForward(true);
+            ticksWithoutProgress++;
+
+        } else {
             setForward(false);
 
             if (hit != null
@@ -194,51 +203,39 @@ public class RectMinerMod {
                     hit.blockZ
                 );
 
-                if (inArea(hp)
-                    && !isAir(MC.theWorld, hp)
-                    && !MC.theWorld.getBlock(
-                        hp.x, hp.y, hp.z
-                    ).getMaterial().isLiquid()) {
+                if (currentTarget.equals(hp)
+                    && inArea(hp)
+                    && !isAir(MC.theWorld, hp)) {
 
-                    MC.playerController.onPlayerDamageBlock(
-                        hp.x, hp.y, hp.z, hit.sideHit
+                    Block block = MC.theWorld.getBlock(
+                        hp.x, hp.y, hp.z
                     );
 
-                    MC.thePlayer.swingItem();
+                    if (block != null
+                        && !block.getMaterial().isLiquid()) {
+
+                        /*
+                         * Mantener el mismo bloque seleccionado.
+                         * onPlayerDamageBlock gestiona el avance
+                         * de la rotura en el controlador vanilla.
+                         */
+                        MC.playerController.onPlayerDamageBlock(
+                            hp.x, hp.y, hp.z, hit.sideHit
+                        );
+
+                        MC.thePlayer.swingItem();
+                        targetTicks++;
+                        ticksWithoutProgress++;
+                    }
                 }
             }
+        }
 
-            ticksWithoutProgress++;
-        } else {
-            setForward(true);
-
-            // Intenta minar bloques de la zona que estén
-            // directamente en la línea de visión.
-            if (hit != null
-                && hit.typeOfHit
-                    == MovingObjectPosition.MovingObjectType.BLOCK) {
-
-                Pos hp = new Pos(
-                    hit.blockX,
-                    hit.blockY,
-                    hit.blockZ
-                );
-
-                if (inArea(hp)
-                    && !isAir(MC.theWorld, hp)
-                    && !MC.theWorld.getBlock(
-                        hp.x, hp.y, hp.z
-                    ).getMaterial().isLiquid()) {
-
-                    MC.playerController.onPlayerDamageBlock(
-                        hp.x, hp.y, hp.z, hit.sideHit
-                    );
-
-                    MC.thePlayer.swingItem();
-                }
-            }
-
-            ticksWithoutProgress++;
+        if (targetTicks > 20 * 30) {
+            stop(
+                "Objetivo atascado. Se detuvo por seguridad."
+            );
+            return;
         }
 
         if (ticksWithoutProgress > 20 * 45) {
@@ -250,7 +247,9 @@ public class RectMinerMod {
 
     private void start() {
         if (pointA == null || pointB == null) {
-            chat("Marca A con NUMPAD 1 y B con NUMPAD 2 primero.");
+            chat(
+                "Marca A con NUMPAD 1 y B con NUMPAD 2 primero."
+            );
             return;
         }
 
@@ -269,6 +268,7 @@ public class RectMinerMod {
 
         running = true;
         currentTarget = null;
+        targetTicks = 0;
         ticksWithoutProgress = 0;
 
         chat(
@@ -291,10 +291,8 @@ public class RectMinerMod {
     private Pos findNearestSolidInArea() {
         int minX = Math.min(pointA.x, pointB.x);
         int maxX = Math.max(pointA.x, pointB.x);
-
         int minY = Math.min(pointA.y, pointB.y);
         int maxY = Math.max(pointA.y, pointB.y);
-
         int minZ = Math.min(pointA.z, pointB.z);
         int maxZ = Math.max(pointA.z, pointB.z);
 
@@ -360,7 +358,9 @@ public class RectMinerMod {
     private boolean isAir(World world, Pos p) {
         Block b = world.getBlock(p.x, p.y, p.z);
 
-        return b == null || b.isAir(world, p.x, p.y, p.z);
+        return b == null || b.isAir(
+            world, p.x, p.y, p.z
+        );
     }
 
     private boolean inArea(Pos p) {
@@ -382,9 +382,10 @@ public class RectMinerMod {
             pressed
         );
 
+        // Evitar que el ataque quede forzado como una tecla.
         KeyBinding.setKeyBindState(
             MC.gameSettings.keyBindAttack.getKeyCode(),
-            pressed && running
+            false
         );
 
         if (!pressed) {
