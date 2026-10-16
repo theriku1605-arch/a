@@ -53,7 +53,7 @@ public class RectMinerMod {
     private static final int BLOCK_HEIGHT = 2;
     private static final int STUCK_TIMEOUT = 20 * 45;
 
-    private static final double MINING_REACH = 4.5D;
+    private static final double MINING_REACH = 1.5D;
 
     // Distancia horizontal a partir de la cual puede avanzar.
     private static final double WALK_DISTANCE = 1.4D;
