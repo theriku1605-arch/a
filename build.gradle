@@ -1,52 +1,75 @@
 
-buildscript {
-    repositories {
-        mavenCentral()
+name: Build RectMiner (Minecraft 1.7.10)
 
-        maven {
-            name = "forge"
-            url = "http://files.minecraftforge.net/maven"
-        }
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
 
-        maven {
-            name = "sonatype"
-            url = "https://oss.sonatype.org/content/repositories/snapshots/"
-        }
+jobs:
+  build:
+    runs-on: ubuntu-latest
 
-        maven {
-            url = "https://jitpack.io"
-        }
-    }
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
 
-    dependencies {
-        classpath 'com.github.GTNewHorizons:ForgeGradle:1.2.11'
-    }
-}
+      - name: Instalar Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
 
-apply plugin: 'forge'
+      - name: Instalar Gradle compatible
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '6.9.1'
 
-version = '0.1.0'
-group = 'com.example.rectminer'
-archivesBaseName = 'RectMiner-1.7.10'
+      - name: Preparar paquete de desarrollo de Forge
+        shell: bash
+        run: |
+          VERSION="1.7.10-10.13.4.1614-1.7.10"
+          CACHE_DIR="$HOME/.gradle/caches/minecraft/net/minecraftforge/forge/$VERSION"
+          FILE="forge-$VERSION-userdev.jar"
+          URL="https://maven.minecraftforge.net/net/minecraftforge/forge/$VERSION/$FILE"
 
-minecraft {
-    version = '1.7.10-10.13.4.1614-1.7.10'
-    runDir = 'eclipse'
-}
+          mkdir -p "$CACHE_DIR"
 
-processResources {
-    inputs.property 'version', project.version
-    inputs.property 'mcversion', '1.7.10'
+          echo "Descargando paquete de desarrollo de Forge..."
+          curl --fail --location --retry 3 "$URL" \
+            --output "$CACHE_DIR/$FILE"
 
-    from(sourceSets.main.resources.srcDirs) {
-        include 'mcmod.info'
-        expand 'version': project.version, 'mcversion': '1.7.10'
-    }
+          test -s "$CACHE_DIR/$FILE"
+          echo "Paquete descargado correctamente."
 
-    from(sourceSets.main.resources.srcDirs) {
-        exclude 'mcmod.info'
-    }
-}
+      - name: Encontrar proyecto
+        id: locate
+        shell: bash
+        run: |
+          BUILD_FILE=$(find . -type f -name build.gradle \
+            -not -path './.git/*' | head -n 1)
 
-sourceCompatibility = 1.7
-targetCompatibility = 1.7
+          if [ -z "$BUILD_FILE" ]; then
+            echo "ERROR: No se encontró build.gradle."
+            find . -maxdepth 4 -type f | sort | head -n 200
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$BUILD_FILE")
+          echo "Proyecto encontrado en: $PROJECT_DIR"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Compilar mod
+        shell: bash
+        run: |
+          cd "${{ steps.locate.outputs.project_dir }}"
+          gradle --no-daemon build --stacktrace
+
+      - name: Guardar JAR
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: RectMiner1710
+          path: '**/build/libs/*.jar'
+          if-no-files-found: error
