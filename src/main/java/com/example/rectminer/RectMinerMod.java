@@ -56,6 +56,8 @@ public class RectMinerMod {
     private static final double MINING_REACH = 4.5D;
     private static final double WALK_DISTANCE = 3.5D;
 
+    private static final float MAX_TURN_PER_TICK = 12.0F;
+
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
         setAKey = new KeyBinding(
@@ -157,8 +159,6 @@ public class RectMinerMod {
             return;
         }
 
-        World world = MC.theWorld;
-
         double px = MC.thePlayer.posX;
         double py = MC.thePlayer.posY
             + MC.thePlayer.getEyeHeight();
@@ -177,27 +177,47 @@ public class RectMinerMod {
             dx * dx + dy * dy + dz * dz
         );
 
-        float yaw = (float) (
+        // Calcular la orientación hacia el objetivo.
+        float targetYaw = (float) (
             Math.atan2(dz, dx) * 180.0D / Math.PI
         ) - 90.0F;
 
-        float pitch = (float) (
+        float targetPitch = (float) (
             -Math.atan2(dy, horizontalDistance)
             * 180.0D / Math.PI
         );
 
-        MC.thePlayer.rotationYaw = yaw;
-        MC.thePlayer.rotationPitch = pitch;
+        // Girar progresivamente hacia el objetivo.
+        float yawDifference =
+            targetYaw - MC.thePlayer.rotationYaw;
+
+        while (yawDifference < -180.0F) {
+            yawDifference += 360.0F;
+        }
+
+        while (yawDifference >= 180.0F) {
+            yawDifference -= 360.0F;
+        }
+
+        if (yawDifference > MAX_TURN_PER_TICK) {
+            yawDifference = MAX_TURN_PER_TICK;
+        } else if (yawDifference < -MAX_TURN_PER_TICK) {
+            yawDifference = -MAX_TURN_PER_TICK;
+        }
+
+        MC.thePlayer.rotationYaw += yawDifference;
+        MC.thePlayer.rotationPitch = targetPitch;
 
         boolean targetHit = isTargetUnderCrosshair();
 
         if (targetHit && distance <= MINING_REACH) {
-            // Atacar solo el objetivo actual.
+            // Detenerse mientras mina el objetivo.
             setForward(false);
             setAttack(true);
         } else {
             setAttack(false);
 
+            // Avanzar únicamente hacia delante.
             if (distance > WALK_DISTANCE) {
                 setForward(true);
             } else {
@@ -288,8 +308,8 @@ public class RectMinerMod {
             for (int col = 0; col < columnCount; col++) {
                 int x = rowXStart + col * rowXDirection;
 
-                // Cada posición horizontal tiene dos bloques
-                // de altura: primero el inferior y luego el superior.
+                // Se conserva el orden original:
+                // bloque inferior y después bloque superior.
                 targets.add(new Pos(x, baseY, z));
                 targets.add(new Pos(x, baseY + 1, z));
             }
