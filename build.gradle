@@ -1,5 +1,4 @@
 
-
 buildscript {
     repositories {
         mavenCentral()
@@ -45,6 +44,3 @@ processResources {
 sourceCompatibility = 1.7
 targetCompatibility = 1.7
 
-          name: RectMiner1710
-          path: '**/build/libs/*.jar'
-          if-no-files-found: error
