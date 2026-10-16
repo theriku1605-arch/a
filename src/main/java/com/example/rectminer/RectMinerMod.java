@@ -26,7 +26,7 @@ import org.lwjgl.input.Keyboard;
 @Mod(
     modid = RectMinerMod.MODID,
     name = "RectMiner",
-    version = "0.2.0",
+    version = "0.2.1",
     acceptableRemoteVersions = "*"
 )
 public class RectMinerMod {
@@ -54,9 +54,15 @@ public class RectMinerMod {
     private static final int STUCK_TIMEOUT = 20 * 45;
 
     private static final double MINING_REACH = 4.5D;
-    private static final double WALK_DISTANCE = 3.5D;
 
+    // Distancia horizontal a partir de la cual puede avanzar.
+    private static final double WALK_DISTANCE = 2.2D;
+
+    // Giro máximo por tick.
     private static final float MAX_TURN_PER_TICK = 12.0F;
+
+    // No caminar si todavía está demasiado desalineado.
+    private static final float WALK_ANGLE_TOLERANCE = 25.0F;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -177,7 +183,6 @@ public class RectMinerMod {
             dx * dx + dy * dy + dz * dz
         );
 
-        // Calcular la orientación hacia el objetivo.
         float targetYaw = (float) (
             Math.atan2(dz, dx) * 180.0D / Math.PI
         ) - 90.0F;
@@ -187,40 +192,48 @@ public class RectMinerMod {
             * 180.0D / Math.PI
         );
 
-        // Girar progresivamente hacia el objetivo.
-        float yawDifference =
-            targetYaw - MC.thePlayer.rotationYaw;
+        // Calcular el giro más corto hacia el objetivo.
+        float yawDifference = wrapAngle(
+            targetYaw - MC.thePlayer.rotationYaw
+        );
 
-        while (yawDifference < -180.0F) {
-            yawDifference += 360.0F;
+        // Girar gradualmente.
+        float turn = yawDifference;
+
+        if (turn > MAX_TURN_PER_TICK) {
+            turn = MAX_TURN_PER_TICK;
+        } else if (turn < -MAX_TURN_PER_TICK) {
+            turn = -MAX_TURN_PER_TICK;
         }
 
-        while (yawDifference >= 180.0F) {
-            yawDifference -= 360.0F;
-        }
-
-        if (yawDifference > MAX_TURN_PER_TICK) {
-            yawDifference = MAX_TURN_PER_TICK;
-        } else if (yawDifference < -MAX_TURN_PER_TICK) {
-            yawDifference = -MAX_TURN_PER_TICK;
-        }
-
-        MC.thePlayer.rotationYaw += yawDifference;
+        MC.thePlayer.rotationYaw += turn;
         MC.thePlayer.rotationPitch = targetPitch;
+
+        // Calcular cuánto falta para quedar alineado DESPUÉS del giro.
+        float remainingYaw = wrapAngle(
+            targetYaw - MC.thePlayer.rotationYaw
+        );
 
         boolean targetHit = isTargetUnderCrosshair();
 
         if (targetHit && distance <= MINING_REACH) {
-            // Detenerse mientras mina el objetivo.
+            // El bloque está apuntado y al alcance: minar sin avanzar.
             setForward(false);
             setAttack(true);
         } else {
             setAttack(false);
 
-            // Avanzar únicamente hacia delante.
-            if (distance > WALK_DISTANCE) {
+            boolean facingTarget =
+                Math.abs(remainingYaw) <= WALK_ANGLE_TOLERANCE;
+
+            boolean needsToMove =
+                horizontalDistance > WALK_DISTANCE;
+
+            if (needsToMove && facingTarget) {
+                // Avanzar únicamente hacia delante.
                 setForward(true);
             } else {
+                // Girar o apuntar sin caminar en una dirección incorrecta.
                 setForward(false);
             }
         }
@@ -229,10 +242,22 @@ public class RectMinerMod {
 
         if (ticksWithoutProgress > STUCK_TIMEOUT) {
             stop(
-                "Parada de seguridad: el bloque no avanzó "
+                "Parada de seguridad: el objetivo no avanzó "
                 + "durante 45 segundos."
             );
         }
+    }
+
+    private float wrapAngle(float angle) {
+        while (angle < -180.0F) {
+            angle += 360.0F;
+        }
+
+        while (angle >= 180.0F) {
+            angle -= 360.0F;
+        }
+
+        return angle;
     }
 
     private void start() {
@@ -308,8 +333,7 @@ public class RectMinerMod {
             for (int col = 0; col < columnCount; col++) {
                 int x = rowXStart + col * rowXDirection;
 
-                // Se conserva el orden original:
-                // bloque inferior y después bloque superior.
+                // Orden original: bloque inferior y después superior.
                 targets.add(new Pos(x, baseY, z));
                 targets.add(new Pos(x, baseY + 1, z));
             }
