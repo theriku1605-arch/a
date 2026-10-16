@@ -42,7 +42,6 @@ public class RectMinerMod {
 
     private boolean running;
     private int ticksWithoutProgress;
-    private int targetTicks;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -114,7 +113,7 @@ public class RectMinerMod {
 
         if (toggleKey.isPressed()) {
             if (running) {
-                stop("Minería pausada.");
+                stop("Seguimiento pausado.");
             } else {
                 start();
             }
@@ -142,7 +141,6 @@ public class RectMinerMod {
         if (currentTarget == null
             || isAir(MC.theWorld, currentTarget)) {
             currentTarget = findNearestSolidInArea();
-            targetTicks = 0;
             ticksWithoutProgress = 0;
 
             if (currentTarget == null) {
@@ -150,7 +148,7 @@ public class RectMinerMod {
                 return;
             }
 
-            chat("Objetivo: " + currentTarget);
+            chat("Siguiendo bloque: " + currentTarget);
         }
 
         double px = MC.thePlayer.posX;
@@ -183,64 +181,19 @@ public class RectMinerMod {
         MC.thePlayer.rotationYaw = yaw;
         MC.thePlayer.rotationPitch = pitch;
 
-        MovingObjectPosition hit =
-            MC.thePlayer.rayTrace(5.0D, 1.0F);
-
+        // Solo caminar si el objetivo está lejos.
+        // No se activa el ataque automático.
         if (distance > 4.25D) {
             setForward(true);
-            MC.playerController.resetBlockRemoving();
-            ticksWithoutProgress++;
-            return;
-        }
-
-        setForward(false);
-
-        if (hit != null
-            && hit.typeOfHit
-                == MovingObjectPosition.MovingObjectType.BLOCK
-            && hit.blockX == currentTarget.x
-            && hit.blockY == currentTarget.y
-            && hit.blockZ == currentTarget.z
-            && !isAir(MC.theWorld, currentTarget)) {
-
-            Block block = MC.theWorld.getBlock(
-                currentTarget.x,
-                currentTarget.y,
-                currentTarget.z
-            );
-
-            if (block != null && !block.getMaterial().isLiquid()) {
-                MC.playerController.onPlayerDamageBlock(
-                    currentTarget.x,
-                    currentTarget.y,
-                    currentTarget.z,
-                    hit.sideHit
-                );
-
-                MC.thePlayer.swingItem();
-
-                targetTicks++;
-                ticksWithoutProgress = 0;
-
-                // 30 ticks = 1,5 segundos a 20 TPS.
-                if (targetTicks >= 30
-                    && !isAir(MC.theWorld, currentTarget)) {
-
-                    MC.playerController.resetBlockRemoving();
-                    targetTicks = 0;
-
-                    chat(
-                        "Reintentando bloque: " + currentTarget
-                    );
-                }
-            }
         } else {
-            ticksWithoutProgress++;
+            setForward(false);
         }
+
+        ticksWithoutProgress++;
 
         if (ticksWithoutProgress > 20 * 45) {
             stop(
-                "Parada de seguridad: sin progreso durante 45 segundos."
+                "Parada de seguridad: objetivo sin cambios durante 45 segundos."
             );
         }
     }
@@ -268,11 +221,10 @@ public class RectMinerMod {
 
         running = true;
         currentTarget = null;
-        targetTicks = 0;
         ticksWithoutProgress = 0;
 
         chat(
-            "Minería iniciada. NUMPAD 3 pausa; "
+            "Seguimiento iniciado. NUMPAD 3 pausa; "
             + "NUMPAD 0 parada de emergencia."
         );
     }
@@ -280,11 +232,9 @@ public class RectMinerMod {
     private void stop(String message) {
         running = false;
         currentTarget = null;
-        targetTicks = 0;
         setForward(false);
 
         if (MC.thePlayer != null) {
-            MC.playerController.resetBlockRemoving();
             chat(message);
         }
     }
@@ -345,7 +295,6 @@ public class RectMinerMod {
         if (hit != null
             && hit.typeOfHit
                 == MovingObjectPosition.MovingObjectType.BLOCK) {
-
             return new Pos(
                 hit.blockX,
                 hit.blockY,
@@ -383,6 +332,7 @@ public class RectMinerMod {
             pressed
         );
 
+        // RectMiner nunca fuerza el ataque.
         KeyBinding.setKeyBindState(
             MC.gameSettings.keyBindAttack.getKeyCode(),
             false
