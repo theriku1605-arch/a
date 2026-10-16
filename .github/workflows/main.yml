@@ -1,5 +1,4 @@
 
-
 name: Build RectMiner (Minecraft 1.7.10)
 
 on:
@@ -22,32 +21,30 @@ jobs:
           distribution: temurin
           java-version: '8'
 
-      - name: Instalar Gradle compatible
+      - name: Instalar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '6.9.1'
 
-      - name: Encontrar proyecto
-        id: locate
+      - name: Descargar paquete de desarrollo de Forge
         shell: bash
         run: |
-          BUILD_FILE=$(find . -type f -name build.gradle \
-            -not -path './.git/*' | head -n 1)
+          VERSION="1.7.10-10.13.4.1614-1.7.10"
+          FILE="forge-${VERSION}-userdev.jar"
+          DIR="$HOME/.gradle/caches/minecraft/net/minecraftforge/forge/${VERSION}"
+          URL="https://maven.minecraftforge.net/net/minecraftforge/forge/${VERSION}/${FILE}"
 
-          if [ -z "$BUILD_FILE" ]; then
-            echo "ERROR: No se encontró build.gradle"
-            exit 1
-          fi
+          mkdir -p "$DIR"
 
-          PROJECT_DIR=$(dirname "$BUILD_FILE")
-          echo "Proyecto encontrado en: $PROJECT_DIR"
-          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Descargando: $FILE"
+          curl --fail --location --retry 3 "$URL" --output "$DIR/$FILE"
 
-      - name: Compilar mod
-        shell: bash
-        run: |
-          cd "${{ steps.locate.outputs.project_dir }}"
-          gradle --no-daemon build --stacktrace
+          test -s "$DIR/$FILE"
+          echo "Paquete descargado. Comprobando archivo..."
+          file "$DIR/$FILE"
+
+      - name: Compilar RectMiner
+        run: gradle --no-daemon build --stacktrace
 
       - name: Guardar JAR
         uses: actions/upload-artifact@v4
