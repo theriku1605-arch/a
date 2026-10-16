@@ -1,6 +1,9 @@
 
 package com.example.rectminer;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Mod;
@@ -23,7 +26,7 @@ import org.lwjgl.input.Keyboard;
 @Mod(
     modid = RectMinerMod.MODID,
     name = "RectMiner",
-    version = "0.1.0",
+    version = "0.2.0",
     acceptableRemoteVersions = "*"
 )
 public class RectMinerMod {
@@ -40,8 +43,18 @@ public class RectMinerMod {
     private Pos pointB;
     private Pos currentTarget;
 
+    private final List<Pos> targets = new ArrayList<Pos>();
+    private int targetIndex;
+
     private boolean running;
     private int ticksWithoutProgress;
+
+    private static final int MAX_BLOCKS = 12000;
+    private static final int BLOCK_HEIGHT = 2;
+    private static final int STUCK_TIMEOUT = 20 * 45;
+
+    private static final double MINING_REACH = 4.5D;
+    private static final double WALK_DISTANCE = 3.5D;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
@@ -81,6 +94,7 @@ public class RectMinerMod {
     @SubscribeEvent
     public void onKeyInput(InputEvent.KeyInputEvent event) {
         if (MC.thePlayer == null || MC.theWorld == null) {
+            releaseControls();
             return;
         }
 
@@ -113,7 +127,7 @@ public class RectMinerMod {
 
         if (toggleKey.isPressed()) {
             if (running) {
-                stop("Seguimiento pausado.");
+                stop("Recorrido pausado.");
             } else {
                 start();
             }
@@ -138,23 +152,16 @@ public class RectMinerMod {
             return;
         }
 
-        if (currentTarget == null
-            || isAir(MC.theWorld, currentTarget)) {
-
-            currentTarget = findNearestSolidInArea();
-            ticksWithoutProgress = 0;
-
-            if (currentTarget == null) {
-                stop("No quedan bloques sólidos detectables en la zona.");
-                return;
-            }
-
-            chat("Siguiendo bloque: " + currentTarget);
+        if (!selectCurrentTarget()) {
+            stop("Recorrido terminado: no quedan bloques pendientes.");
+            return;
         }
+
+        World world = MC.theWorld;
 
         double px = MC.thePlayer.posX;
         double py = MC.thePlayer.posY
-            + MC.thePlayer.getEyeHeight() * 0.65D;
+            + MC.thePlayer.getEyeHeight();
         double pz = MC.thePlayer.posZ;
 
         double tx = currentTarget.x + 0.5D;
@@ -182,111 +189,163 @@ public class RectMinerMod {
         MC.thePlayer.rotationYaw = yaw;
         MC.thePlayer.rotationPitch = pitch;
 
-        // RectMiner solo orienta y mueve al jugador.
-        // El minado lo realiza el autoclick externo.
-        if (distance > 4.25D) {
-            setForward(true);
-        } else {
+        boolean targetHit = isTargetUnderCrosshair();
+
+        if (targetHit && distance <= MINING_REACH) {
+            // Atacar solo el objetivo actual.
             setForward(false);
+            setAttack(true);
+        } else {
+            setAttack(false);
+
+            if (distance > WALK_DISTANCE) {
+                setForward(true);
+            } else {
+                setForward(false);
+            }
         }
 
         ticksWithoutProgress++;
 
-        if (ticksWithoutProgress > 20 * 45) {
+        if (ticksWithoutProgress > STUCK_TIMEOUT) {
             stop(
-                "Parada de seguridad: objetivo sin cambios durante 45 segundos."
+                "Parada de seguridad: el bloque no avanzó "
+                + "durante 45 segundos."
             );
         }
     }
 
     private void start() {
         if (pointA == null || pointB == null) {
-            chat(
-                "Marca A con NUMPAD 1 y B con NUMPAD 2 primero."
-            );
+            chat("Marca A con NUMPAD 1 y B con NUMPAD 2 primero.");
             return;
         }
 
-        long volume =
-            ((long) Math.abs(pointA.x - pointB.x) + 1L)
-            * ((long) Math.abs(pointA.y - pointB.y) + 1L)
-            * ((long) Math.abs(pointA.z - pointB.z) + 1L);
-
-        if (volume > 12000L) {
-            chat(
-                "Área demasiado grande (" + volume
-                + " bloques); máximo 12000."
-            );
-            return;
-        }
-
-        running = true;
-        currentTarget = null;
-        ticksWithoutProgress = 0;
-
-        chat(
-            "Seguimiento iniciado. NUMPAD 3 pausa; "
-            + "NUMPAD 0 parada de emergencia."
-        );
-    }
-
-    private void stop(String message) {
-        running = false;
-        currentTarget = null;
-        setForward(false);
-
-        if (MC.thePlayer != null) {
-            chat(message);
-        }
-    }
-
-    private Pos findNearestSolidInArea() {
         int minX = Math.min(pointA.x, pointB.x);
         int maxX = Math.max(pointA.x, pointB.x);
-        int minY = Math.min(pointA.y, pointB.y);
-        int maxY = Math.max(pointA.y, pointB.y);
         int minZ = Math.min(pointA.z, pointB.z);
         int maxZ = Math.max(pointA.z, pointB.z);
 
-        Pos best = null;
-        double bestDist = Double.MAX_VALUE;
+        long width = (long) maxX - minX + 1L;
+        long length = (long) maxZ - minZ + 1L;
+        long volume = width * length * BLOCK_HEIGHT;
 
-        double px = MC.thePlayer.posX;
-        double py = MC.thePlayer.posY + 0.5D;
-        double pz = MC.thePlayer.posZ;
-
-        World world = MC.theWorld;
-
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    Pos p = new Pos(x, y, z);
-
-                    if (isAir(world, p)) {
-                        continue;
-                    }
-
-                    Block b = world.getBlock(x, y, z);
-
-                    if (b == null || b.getMaterial().isLiquid()) {
-                        continue;
-                    }
-
-                    double dx = x + 0.5D - px;
-                    double dy = y + 0.5D - py;
-                    double dz = z + 0.5D - pz;
-
-                    double d = dx * dx + dy * dy + dz * dz;
-
-                    if (d < bestDist) {
-                        bestDist = d;
-                        best = p;
-                    }
-                }
-            }
+        if (volume > MAX_BLOCKS) {
+            chat(
+                "Área demasiado grande (" + volume
+                + " bloques). Máximo: " + MAX_BLOCKS + "."
+            );
+            return;
         }
 
-        return best;
+        buildZigzagTargets();
+
+        targetIndex = 0;
+        currentTarget = null;
+        ticksWithoutProgress = 0;
+
+        running = true;
+        releaseControls();
+
+        chat(
+            "Zigzag iniciado: " + targets.size()
+            + " posiciones. NUMPAD 3 pausa; NUMPAD 0 detiene."
+        );
+    }
+
+    private void buildZigzagTargets() {
+        targets.clear();
+
+        int minX = Math.min(pointA.x, pointB.x);
+        int maxX = Math.max(pointA.x, pointB.x);
+        int minZ = Math.min(pointA.z, pointB.z);
+        int maxZ = Math.max(pointA.z, pointB.z);
+
+        int baseY = Math.min(pointA.y, pointB.y);
+
+        int xStart = pointA.x;
+        int xDirection = pointA.x <= pointB.x ? 1 : -1;
+
+        int zStart = pointA.z;
+        int zDirection = pointA.z <= pointB.z ? 1 : -1;
+
+        int rowCount = maxZ - minZ + 1;
+        int columnCount = maxX - minX + 1;
+
+        for (int row = 0; row < rowCount; row++) {
+            int z = zStart + row * zDirection;
+
+            boolean forwardRow = row % 2 == 0;
+
+            int rowXStart = forwardRow
+                ? xStart
+                : xStart + (columnCount - 1) * xDirection;
+
+            int rowXDirection = forwardRow
+                ? xDirection
+                : -xDirection;
+
+            for (int col = 0; col < columnCount; col++) {
+                int x = rowXStart + col * rowXDirection;
+
+                // Cada posición horizontal tiene dos bloques
+                // de altura: primero el inferior y luego el superior.
+                targets.add(new Pos(x, baseY, z));
+                targets.add(new Pos(x, baseY + 1, z));
+            }
+        }
+    }
+
+    private boolean selectCurrentTarget() {
+        World world = MC.theWorld;
+
+        while (targetIndex < targets.size()) {
+            Pos candidate = targets.get(targetIndex);
+
+            if (!isMineable(world, candidate)) {
+                targetIndex++;
+                currentTarget = null;
+                ticksWithoutProgress = 0;
+                continue;
+            }
+
+            if (currentTarget == null
+                || !currentTarget.equals(candidate)) {
+                currentTarget = candidate;
+                ticksWithoutProgress = 0;
+                setAttack(false);
+                chat("Objetivo: " + currentTarget);
+            }
+
+            return true;
+        }
+
+        currentTarget = null;
+        return false;
+    }
+
+    private boolean isTargetUnderCrosshair() {
+        if (currentTarget == null || MC.thePlayer == null) {
+            return false;
+        }
+
+        MovingObjectPosition hit =
+            MC.thePlayer.rayTrace(MINING_REACH, 1.0F);
+
+        return hit != null
+            && hit.typeOfHit
+                == MovingObjectPosition.MovingObjectType.BLOCK
+            && hit.blockX == currentTarget.x
+            && hit.blockY == currentTarget.y
+            && hit.blockZ == currentTarget.z;
+    }
+
+    private boolean isMineable(World world, Pos p) {
+        Block block = world.getBlock(p.x, p.y, p.z);
+
+        return block != null
+            && !block.isAir(world, p.x, p.y, p.z)
+            && !block.getMaterial().isLiquid();
     }
 
     private Pos aimedBlock() {
@@ -306,21 +365,15 @@ public class RectMinerMod {
         return null;
     }
 
-    private boolean isAir(World world, Pos p) {
-        Block b = world.getBlock(p.x, p.y, p.z);
+    private void setAttack(boolean pressed) {
+        if (MC.gameSettings == null) {
+            return;
+        }
 
-        return b == null || b.isAir(
-            world, p.x, p.y, p.z
+        KeyBinding.setKeyBindState(
+            MC.gameSettings.keyBindAttack.getKeyCode(),
+            pressed
         );
-    }
-
-    private boolean inArea(Pos p) {
-        return p.x >= Math.min(pointA.x, pointB.x)
-            && p.x <= Math.max(pointA.x, pointB.x)
-            && p.y >= Math.min(pointA.y, pointB.y)
-            && p.y <= Math.max(pointA.y, pointB.y)
-            && p.z >= Math.min(pointA.z, pointB.z)
-            && p.z <= Math.max(pointA.z, pointB.z);
     }
 
     private void setForward(boolean pressed) {
@@ -332,10 +385,6 @@ public class RectMinerMod {
             MC.gameSettings.keyBindForward.getKeyCode(),
             pressed
         );
-
-        // No modificar keyBindAttack.
-        // Así RectMiner no interfiere directamente
-        // con el ataque ni con el autoclick externo.
 
         if (!pressed) {
             KeyBinding.setKeyBindState(
@@ -357,6 +406,24 @@ public class RectMinerMod {
                 MC.gameSettings.keyBindJump.getKeyCode(),
                 false
             );
+        }
+    }
+
+    private void releaseControls() {
+        setAttack(false);
+        setForward(false);
+    }
+
+    private void stop(String message) {
+        running = false;
+        currentTarget = null;
+        targets.clear();
+        targetIndex = 0;
+
+        releaseControls();
+
+        if (MC.thePlayer != null) {
+            chat(message);
         }
     }
 
