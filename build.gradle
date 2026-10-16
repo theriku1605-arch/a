@@ -2,12 +2,10 @@
 buildscript {
     repositories {
         mavenCentral()
-
         maven {
             name = "forge"
             url = "https://maven.minecraftforge.net/"
         }
-
         maven {
             url = "https://jitpack.io"
         }
@@ -23,6 +21,31 @@ apply plugin: 'forge'
 version = '0.1.0'
 group = 'com.example.rectminer'
 archivesBaseName = 'RectMiner-1.7.10'
+
+repositories {
+    mavenCentral()
+    maven {
+        name = "forge"
+        url = "https://maven.minecraftforge.net/"
+    }
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency { details ->
+        def module = details.requested.name
+
+        if (details.requested.group == 'org.scala-lang' &&
+            module in [
+                'scala-parser-combinators_2.11',
+                'scala-swing_2.11',
+                'scala-xml_2.11'
+            ]) {
+            details.useTarget(
+                "org.scala-lang.modules:${module}:${details.requested.version}"
+            )
+        }
+    }
+}
 
 minecraft {
     version = '1.7.10-10.13.4.1614-1.7.10'
