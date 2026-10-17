@@ -1,166 +1,125 @@
-
+```java
 package com.example.rectminer;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import cpw.mods.fml.client.registry.ClientRegistry;
-import cpw.mods.fml.common.FMLCommonHandler;
-import cpw.mods.fml.common.Mod;
-import cpw.mods.fml.common.event.FMLInitializationEvent;
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import cpw.mods.fml.common.gameevent.InputEvent;
-import cpw.mods.fml.common.gameevent.TickEvent;
+import org.lwjgl.input.Keyboard;
 
-import net.minecraft.block.Block;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.MovingObjectPosition;
-import net.minecraft.world.World;
-
+import net.minecraft.util.Vec3;
 import net.minecraftforge.common.MinecraftForge;
-
-import org.lwjgl.input.Keyboard;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent;
+import net.minecraftforge.fml.common.gameevent.TickEvent;
+import cpw.mods.fml.client.registry.ClientRegistry;
 
 @Mod(
     modid = RectMinerMod.MODID,
     name = "RectMiner",
-    version = "0.3.1",
-    acceptableRemoteVersions = "*"
+    version = "0.3.2",
+    clientSideOnly = true
 )
 public class RectMinerMod {
 
     public static final String MODID = "rectminer";
+
     private static final Minecraft MC = Minecraft.getMinecraft();
 
-    private KeyBinding setAKey;
-    private KeyBinding setBKey;
-    private KeyBinding toggleKey;
-    private KeyBinding autoKillerKey;
-    private KeyBinding stopKey;
-
-    private Pos pointA;
-    private Pos pointB;
-    private Pos currentTarget;
-
-    private final List<Pos> targets = new ArrayList<Pos>();
-    private int targetIndex;
-
-    private boolean running;
-    private boolean autoKillerRunning;
-    private int ticksWithoutProgress;
-
-    private EntityLivingBase mobTarget;
-
-    private static final int MAX_BLOCKS = 12000;
-    private static final int BLOCK_HEIGHT = 2;
-    private static final int STUCK_TIMEOUT = 20 * 45;
-
     // RectMiner
-    private static final double MINING_REACH = 1.5D;
-    private static final double WALK_DISTANCE = 1.4D;
-    private static final float MAX_TURN_PER_TICK = 12.0F;
-    private static final float WALK_ANGLE_TOLERANCE = 25.0F;
+    private static KeyBinding pointAKey;
+    private static KeyBinding pointBKey;
+    private static KeyBinding minerToggleKey;
+
+    private static boolean miningEnabled = false;
+    private static boolean pointASet = false;
+    private static boolean pointBSet = false;
+
+    private static int pointAX, pointAY, pointAZ;
+    private static int pointBX, pointBY, pointBZ;
+
+    private static final List<BlockPos> targets =
+        new ArrayList<BlockPos>();
+
+    private static int targetIndex = 0;
 
     // AutoKiller
+    private static KeyBinding autoKillerKey;
+    private static boolean autoKillerEnabled = false;
+
+    private static EntityLivingBase mobTarget = null;
+
     private static final double MOB_SEARCH_RANGE = 100.0D;
     private static final double MOB_ATTACK_RANGE = 3.0D;
-    private static final double MOB_APPROACH_DISTANCE = 2.0D;
-    private static final float MOB_MAX_TURN_PER_TICK = 15.0F;
-    private static final float MOB_AIM_TOLERANCE = 12.0F;
+    private static final double MOB_STOP_DISTANCE = 2.0D;
+
+    private static final float MAX_TURN_PER_TICK = 15.0F;
+    private static final float AIM_TOLERANCE = 12.0F;
+
+    // AutoFeed
+    private static KeyBinding autoFeedKey;
+    private static boolean autoFeedEnabled = false;
+    private static int autoFeedTicks = 0;
+
+    // 10 minutos y 30 segundos a 20 ticks por segundo.
+    private static final int AUTO_FEED_INTERVAL = 12600;
+
+    // Parada de emergencia
+    private static KeyBinding emergencyStopKey;
 
     @Mod.EventHandler
     public void init(FMLInitializationEvent event) {
-        setAKey = new KeyBinding(
-            "key.rectminer.set_a",
+        pointAKey = new KeyBinding(
+            "key.rectminer.pointa",
             Keyboard.KEY_NUMPAD1,
             "key.categories.rectminer"
         );
 
-        setBKey = new KeyBinding(
-            "key.rectminer.set_b",
+        pointBKey = new KeyBinding(
+            "key.rectminer.pointb",
             Keyboard.KEY_NUMPAD2,
             "key.categories.rectminer"
         );
 
-        toggleKey = new KeyBinding(
-            "key.rectminer.start_stop",
+        minerToggleKey = new KeyBinding(
+            "key.rectminer.toggle",
             Keyboard.KEY_NUMPAD3,
             "key.categories.rectminer"
         );
 
         autoKillerKey = new KeyBinding(
-            "key.rectminer.auto_killer",
+            "key.rectminer.autokiller",
             Keyboard.KEY_NUMPAD4,
             "key.categories.rectminer"
         );
 
-        stopKey = new KeyBinding(
-            "key.rectminer.emergency_stop",
+        autoFeedKey = new KeyBinding(
+            "key.rectminer.autofeed",
+            Keyboard.KEY_NUMPAD5,
+            "key.categories.rectminer"
+        );
+
+        emergencyStopKey = new KeyBinding(
+            "key.rectminer.emergency",
             Keyboard.KEY_NUMPAD0,
             "key.categories.rectminer"
         );
 
-        ClientRegistry.registerKeyBinding(setAKey);
-        ClientRegistry.registerKeyBinding(setBKey);
-        ClientRegistry.registerKeyBinding(toggleKey);
+        ClientRegistry.registerKeyBinding(pointAKey);
+        ClientRegistry.registerKeyBinding(pointBKey);
+        ClientRegistry.registerKeyBinding(minerToggleKey);
         ClientRegistry.registerKeyBinding(autoKillerKey);
-        ClientRegistry.registerKeyBinding(stopKey);
+        ClientRegistry.registerKeyBinding(autoFeedKey);
+        ClientRegistry.registerKeyBinding(emergencyStopKey);
 
-        FMLCommonHandler.instance().bus().register(this);
         MinecraftForge.EVENT_BUS.register(this);
-    }
-
-    @SubscribeEvent
-    public void onKeyInput(InputEvent.KeyInputEvent event) {
-        if (MC.thePlayer == null || MC.theWorld == null) {
-            releaseControls();
-            return;
-        }
-
-        if (stopKey.isPressed()) {
-            emergencyStop();
-            return;
-        }
-
-        if (setAKey.isPressed()) {
-            Pos p = aimedBlock();
-
-            if (p != null) {
-                pointA = p;
-                chat("Punto A: " + p);
-            } else {
-                chat("Mira un bloque para marcar el punto A.");
-            }
-        }
-
-        if (setBKey.isPressed()) {
-            Pos p = aimedBlock();
-
-            if (p != null) {
-                pointB = p;
-                chat("Punto B: " + p);
-            } else {
-                chat("Mira un bloque para marcar el punto B.");
-            }
-        }
-
-        if (autoKillerKey.isPressed()) {
-            toggleAutoKiller();
-        }
-
-        if (toggleKey.isPressed()) {
-            if (autoKillerRunning) {
-                chat("Desactiva AutoKiller con NUMPAD 4 antes de minar.");
-            } else if (running) {
-                stopMining("RectMiner pausado.");
-            } else {
-                startMining();
-            }
-        }
     }
 
     @SubscribeEvent
@@ -170,393 +129,261 @@ public class RectMinerMod {
         }
 
         if (MC.thePlayer == null || MC.theWorld == null) {
-            releaseControls();
+            releaseMovement();
             return;
         }
 
-        if (MC.currentScreen != null) {
-            releaseControls();
-            return;
-        }
+        handleKeys();
+        tickAutoFeed();
 
-        if (autoKillerRunning) {
+        if (autoKillerEnabled) {
             tickAutoKiller();
-            return;
-        }
-
-        if (running) {
+        } else if (miningEnabled) {
             tickRectMiner();
+        } else {
+            releaseMovement();
         }
     }
 
-    // =========================================================
-    // RECTMINER
-    // =========================================================
-
-    private void tickRectMiner() {
-        if (pointA == null || pointB == null) {
-            stopMining("Faltan los puntos A y B.");
-            return;
+    private void handleKeys() {
+        if (pointAKey.isPressed()) {
+            setPointA();
         }
 
-        if (!selectCurrentTarget()) {
-            stopMining("Recorrido terminado: no quedan bloques pendientes.");
-            return;
+        if (pointBKey.isPressed()) {
+            setPointB();
         }
 
-        double px = MC.thePlayer.posX;
-        double py = MC.thePlayer.posY + MC.thePlayer.getEyeHeight();
-        double pz = MC.thePlayer.posZ;
-
-        double tx = currentTarget.x + 0.5D;
-        double ty = currentTarget.y + 0.5D;
-        double tz = currentTarget.z + 0.5D;
-
-        double dx = tx - px;
-        double dy = ty - py;
-        double dz = tz - pz;
-
-        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
-        double distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-        float targetYaw = (float) (
-            Math.atan2(dz, dx) * 180.0D / Math.PI
-        ) - 90.0F;
-
-        float targetPitch = (float) (
-            -Math.atan2(dy, horizontalDistance) * 180.0D / Math.PI
-        );
-
-        float yawDifference = wrapAngle(
-            targetYaw - MC.thePlayer.rotationYaw
-        );
-
-        MC.thePlayer.rotationYaw += clampTurn(
-            yawDifference,
-            MAX_TURN_PER_TICK
-        );
-        MC.thePlayer.rotationPitch = targetPitch;
-
-        float remainingYaw = wrapAngle(
-            targetYaw - MC.thePlayer.rotationYaw
-        );
-
-        boolean targetHit = isTargetUnderCrosshair();
-
-        if (targetHit && distance <= MINING_REACH) {
-            setForward(false);
-            setAttack(true);
-        } else {
-            setAttack(false);
-
-            if (horizontalDistance > WALK_DISTANCE
-                && Math.abs(remainingYaw) <= WALK_ANGLE_TOLERANCE) {
-                setForward(true);
+        if (minerToggleKey.isPressed()) {
+            if (miningEnabled) {
+                stopMining();
+                message("RectMiner pausado.");
+            } else if (pointASet && pointBSet) {
+                startMining();
             } else {
-                setForward(false);
+                message("Primero selecciona A con Numpad 1 y B con Numpad 2.");
             }
         }
 
-        ticksWithoutProgress++;
+        if (autoKillerKey.isPressed()) {
+            autoKillerEnabled = !autoKillerEnabled;
 
-        if (ticksWithoutProgress > STUCK_TIMEOUT) {
-            stopMining(
-                "Parada de seguridad: el objetivo no avanzó durante 45 segundos."
-            );
+            if (autoKillerEnabled) {
+                stopMining();
+                mobTarget = null;
+                message("AutoKiller activado. Buscando mobs hasta 100 bloques.");
+            } else {
+                mobTarget = null;
+                releaseMovement();
+                message("AutoKiller desactivado.");
+            }
         }
+
+        if (autoFeedKey.isPressed()) {
+            autoFeedEnabled = !autoFeedEnabled;
+            autoFeedTicks = 0;
+
+            if (autoFeedEnabled) {
+                message("AutoFeed activado. /feed se enviará en 10 min 30 s.");
+            } else {
+                message("AutoFeed desactivado.");
+            }
+        }
+
+        if (emergencyStopKey.isPressed()) {
+            stopEverything();
+        }
+    }
+
+    private void setPointA() {
+        BlockPos pos = aimedBlock();
+
+        if (pos == null) {
+            message("Apunta a un bloque para seleccionar A.");
+            return;
+        }
+
+        pointAX = pos.x;
+        pointAY = pos.y;
+        pointAZ = pos.z;
+        pointASet = true;
+
+        message("Punto A: " + pointAX + ", " + pointAY + ", " + pointAZ);
+    }
+
+    private void setPointB() {
+        BlockPos pos = aimedBlock();
+
+        if (pos == null) {
+            message("Apunta a un bloque para seleccionar B.");
+            return;
+        }
+
+        pointBX = pos.x;
+        pointBY = pos.y;
+        pointBZ = pos.z;
+        pointBSet = true;
+
+        message("Punto B: " + pointBX + ", " + pointBY + ", " + pointBZ);
+    }
+
+    private BlockPos aimedBlock() {
+        MovingObjectPosition hit = MC.objectMouseOver;
+
+        if (hit == null ||
+            hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
+            return null;
+        }
+
+        return new BlockPos(
+            hit.getBlockPos().getX(),
+            hit.getBlockPos().getY(),
+            hit.getBlockPos().getZ()
+        );
     }
 
     private void startMining() {
-        if (pointA == null || pointB == null) {
-            chat("Marca A con NUMPAD 1 y B con NUMPAD 2 primero.");
-            return;
-        }
-
-        int minX = Math.min(pointA.x, pointB.x);
-        int maxX = Math.max(pointA.x, pointB.x);
-        int minZ = Math.min(pointA.z, pointB.z);
-        int maxZ = Math.max(pointA.z, pointB.z);
-
-        long width = (long) maxX - minX + 1L;
-        long length = (long) maxZ - minZ + 1L;
-        long volume = width * length * BLOCK_HEIGHT;
-
-        if (volume > MAX_BLOCKS) {
-            chat("Área demasiado grande (" + volume
-                + " bloques). Máximo: " + MAX_BLOCKS + ".");
-            return;
-        }
-
         buildZigzagTargets();
 
+        if (targets.isEmpty()) {
+            message("No hay bloques seleccionados para minar.");
+            return;
+        }
+
         targetIndex = 0;
-        currentTarget = null;
-        ticksWithoutProgress = 0;
-        running = true;
-
-        releaseControls();
-
-        chat("Zigzag iniciado: " + targets.size()
-            + " posiciones. NUMPAD 3 pausa; NUMPAD 0 detiene.");
+        miningEnabled = true;
+        message("RectMiner iniciado. Objetivos: " + targets.size());
     }
 
+    private void stopMining() {
+        miningEnabled = false;
+        releaseMovement();
+    }
+
+    /*
+     * Construye una ruta en zigzag dentro del rectángulo seleccionado.
+     * Cada columna incluye el bloque inferior y el superior.
+     */
     private void buildZigzagTargets() {
         targets.clear();
 
-        int minX = Math.min(pointA.x, pointB.x);
-        int maxX = Math.max(pointA.x, pointB.x);
-        int minZ = Math.min(pointA.z, pointB.z);
-        int maxZ = Math.max(pointA.z, pointB.z);
+        int minX = Math.min(pointAX, pointBX);
+        int maxX = Math.max(pointAX, pointBX);
+        int minZ = Math.min(pointAZ, pointBZ);
+        int maxZ = Math.max(pointAZ, pointBZ);
+        int baseY = Math.min(pointAY, pointBY);
 
-        int baseY = Math.min(pointA.y, pointB.y);
-        int xStart = pointA.x;
-        int xDirection = pointA.x <= pointB.x ? 1 : -1;
-        int zStart = pointA.z;
-        int zDirection = pointA.z <= pointB.z ? 1 : -1;
+        boolean reverseZ = false;
 
-        int rowCount = maxZ - minZ + 1;
-        int columnCount = maxX - minX + 1;
-
-        for (int row = 0; row < rowCount; row++) {
-            int z = zStart + row * zDirection;
-            boolean forwardRow = row % 2 == 0;
-
-            int rowXStart = forwardRow
-                ? xStart
-                : xStart + (columnCount - 1) * xDirection;
-
-            int rowXDirection = forwardRow
-                ? xDirection
-                : -xDirection;
-
-            for (int col = 0; col < columnCount; col++) {
-                int x = rowXStart + col * rowXDirection;
-
-                targets.add(new Pos(x, baseY, z));
-                targets.add(new Pos(x, baseY + 1, z));
-            }
-        }
-    }
-
-    private boolean selectCurrentTarget() {
-        World world = MC.theWorld;
-
-        while (targetIndex < targets.size()) {
-            Pos candidate = targets.get(targetIndex);
-
-            if (!isMineable(world, candidate)) {
-                targetIndex++;
-                currentTarget = null;
-                ticksWithoutProgress = 0;
-                continue;
+        for (int x = minX; x <= maxX; x++) {
+            if (!reverseZ) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    targets.add(new BlockPos(x, baseY, z));
+                    targets.add(new BlockPos(x, baseY + 1, z));
+                }
+            } else {
+                for (int z = maxZ; z >= minZ; z--) {
+                    targets.add(new BlockPos(x, baseY, z));
+                    targets.add(new BlockPos(x, baseY + 1, z));
+                }
             }
 
-            if (currentTarget == null || !currentTarget.equals(candidate)) {
-                currentTarget = candidate;
-                ticksWithoutProgress = 0;
-                setAttack(false);
-                chat("Objetivo: " + currentTarget);
-            }
-
-            return true;
+            reverseZ = !reverseZ;
         }
-
-        currentTarget = null;
-        return false;
     }
 
-    private boolean isTargetUnderCrosshair() {
-        if (currentTarget == null || MC.thePlayer == null) {
-            return false;
-        }
-
-        MovingObjectPosition hit = MC.thePlayer.rayTrace(
-            MINING_REACH,
-            1.0F
-        );
-
-        return hit != null
-            && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
-            && hit.blockX == currentTarget.x
-            && hit.blockY == currentTarget.y
-            && hit.blockZ == currentTarget.z;
-    }
-
-    private boolean isMineable(World world, Pos p) {
-        Block block = world.getBlock(p.x, p.y, p.z);
-
-        return block != null
-            && !block.isAir(world, p.x, p.y, p.z)
-            && !block.getMaterial().isLiquid();
-    }
-
-    private Pos aimedBlock() {
-        MovingObjectPosition hit = MC.thePlayer.rayTrace(5.0D, 1.0F);
-
-        if (hit != null
-            && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            return new Pos(hit.blockX, hit.blockY, hit.blockZ);
-        }
-
-        return null;
-    }
-
-    private void stopMining(String message) {
-        running = false;
-        currentTarget = null;
-        targets.clear();
-        targetIndex = 0;
-
-        releaseControls();
-        chat(message);
-    }
-
-    // =========================================================
-    // AUTOKILLER: BUSCAR, PERSEGUIR Y ATACAR
-    // =========================================================
-
-    private void toggleAutoKiller() {
-        if (autoKillerRunning) {
-            autoKillerRunning = false;
-            mobTarget = null;
-            releaseControls();
-            chat("AutoKiller desactivado.");
+    private void tickRectMiner() {
+        if (targets.isEmpty() || targetIndex >= targets.size()) {
+            stopMining();
+            message("RectMiner terminó la ruta.");
             return;
         }
 
-        if (running) {
-            stopMining("RectMiner pausado para activar AutoKiller.");
+        BlockPos target = targets.get(targetIndex);
+
+        double dx = target.x + 0.5D - MC.thePlayer.posX;
+        double dz = target.z + 0.5D - MC.thePlayer.posZ;
+        double distance = Math.sqrt(dx * dx + dz * dz);
+
+        float desiredYaw = (float) (
+            Math.atan2(dz, dx) * 180.0D / Math.PI
+        ) - 90.0F;
+
+        MC.thePlayer.rotationYaw = approachAngle(
+            MC.thePlayer.rotationYaw,
+            desiredYaw,
+            10.0F
+        );
+
+        if (distance > 1.4D) {
+            MC.gameSettings.keyBindForward.pressed = true;
+        } else {
+            MC.gameSettings.keyBindForward.pressed = false;
+            targetIndex++;
         }
 
-        autoKillerRunning = true;
-        mobTarget = null;
-        releaseControls();
-
-        chat("AutoKiller activado. Buscando mobs en un radio de 100 bloques.");
+        MC.gameSettings.keyBindSprint.pressed = false;
     }
 
     private void tickAutoKiller() {
-        // Mantener el objetivo actual mientras siga vivo y dentro del radio.
-        if (!isValidMobTarget(mobTarget)) {
+        if (mobTarget == null ||
+            !mobTarget.isEntityAlive() ||
+            MC.thePlayer.getDistanceToEntity(mobTarget) > MOB_SEARCH_RANGE) {
             mobTarget = findNearestMob();
         }
 
         if (mobTarget == null) {
-            setAttack(false);
-            setForward(false);
+            releaseMovement();
             return;
         }
 
-        double dx = mobTarget.posX - MC.thePlayer.posX;
-        double dz = mobTarget.posZ - MC.thePlayer.posZ;
-        double dy = mobTarget.posY + mobTarget.height * 0.5D
-            - (MC.thePlayer.posY + MC.thePlayer.getEyeHeight());
+        faceEntity(mobTarget);
 
-        double horizontalDistance = Math.sqrt(dx * dx + dz * dz);
         double distance = MC.thePlayer.getDistanceToEntity(mobTarget);
 
-        float targetYaw = (float) (
-            Math.atan2(dz, dx) * 180.0D / Math.PI
-        ) - 90.0F;
-
-        float targetPitch = (float) (
-            -Math.atan2(dy, horizontalDistance) * 180.0D / Math.PI
-        );
-
-        float yawDifference = wrapAngle(
-            targetYaw - MC.thePlayer.rotationYaw
-        );
-
-        float pitchDifference = wrapAngle(
-            targetPitch - MC.thePlayer.rotationPitch
-        );
-
-        MC.thePlayer.rotationYaw += clampTurn(
-            yawDifference,
-            MOB_MAX_TURN_PER_TICK
-        );
-
-        MC.thePlayer.rotationPitch += clampTurn(
-            pitchDifference,
-            MOB_MAX_TURN_PER_TICK
-        );
-
-        float remainingYaw = wrapAngle(
-            targetYaw - MC.thePlayer.rotationYaw
-        );
-
-        float remainingPitch = wrapAngle(
-            targetPitch - MC.thePlayer.rotationPitch
-        );
-
-        boolean aligned =
-            Math.abs(remainingYaw) <= MOB_AIM_TOLERANCE
-            && Math.abs(remainingPitch) <= MOB_AIM_TOLERANCE;
-
-        boolean targetUnderCrosshair =
-            MC.objectMouseOver != null
-            && MC.objectMouseOver.typeOfHit
-                == MovingObjectPosition.MovingObjectType.ENTITY
-            && MC.objectMouseOver.entityHit == mobTarget;
-
-        if (distance <= MOB_ATTACK_RANGE
-            && aligned
-            && targetUnderCrosshair) {
-            setForward(false);
-            setAttack(true);
+        if (distance > MOB_STOP_DISTANCE) {
+            MC.gameSettings.keyBindForward.pressed = true;
+            MC.gameSettings.keyBindSprint.pressed = true;
         } else {
-            setAttack(false);
-
-            // Avanza hacia el objetivo; no hace pathfinding alrededor de obstáculos.
-            if (distance > MOB_APPROACH_DISTANCE) {
-                setForward(true);
-            } else {
-                setForward(false);
-            }
-        }
-    }
-
-    private boolean isValidMobTarget(EntityLivingBase entity) {
-        if (entity == null
-            || entity.isDead
-            || !entity.isEntityAlive()
-            || entity instanceof EntityPlayer) {
-            return false;
+            MC.gameSettings.keyBindForward.pressed = false;
+            MC.gameSettings.keyBindSprint.pressed = false;
         }
 
-        return MC.thePlayer.getDistanceSqToEntity(entity)
-            <= MOB_SEARCH_RANGE * MOB_SEARCH_RANGE;
+        if (distance <= MOB_ATTACK_RANGE && isAimedAt(mobTarget)) {
+            MC.playerController.attackEntity(MC.thePlayer, mobTarget);
+        }
     }
 
     private EntityLivingBase findNearestMob() {
-        List<EntityLivingBase> entities =
-            MC.theWorld.getEntitiesWithinAABB(
-                EntityLivingBase.class,
-                MC.thePlayer.boundingBox.expand(
-                    MOB_SEARCH_RANGE,
-                    MOB_SEARCH_RANGE,
-                    MOB_SEARCH_RANGE
-                )
-            );
+        List<?> entities = MC.theWorld.getEntitiesWithinAABB(
+            EntityLivingBase.class,
+            MC.thePlayer.boundingBox.expand(
+                MOB_SEARCH_RANGE,
+                MOB_SEARCH_RANGE,
+                MOB_SEARCH_RANGE
+            )
+        );
 
         EntityLivingBase nearest = null;
-        double nearestDistanceSq =
-            MOB_SEARCH_RANGE * MOB_SEARCH_RANGE;
+        double nearestDistance = MOB_SEARCH_RANGE * MOB_SEARCH_RANGE;
 
-        for (EntityLivingBase entity : entities) {
-            if (entity == null
-                || entity == MC.thePlayer
-                || entity instanceof EntityPlayer
-                || entity.isDead
-                || !entity.isEntityAlive()) {
+        for (Object object : entities) {
+            if (!(object instanceof EntityLivingBase)) {
                 continue;
             }
 
-            double distanceSq =
-                MC.thePlayer.getDistanceSqToEntity(entity);
+            EntityLivingBase entity = (EntityLivingBase) object;
 
-            if (distanceSq <= nearestDistanceSq) {
-                nearestDistanceSq = distanceSq;
+            if (entity == MC.thePlayer ||
+                !entity.isEntityAlive() ||
+                entity instanceof EntityPlayer) {
+                continue;
+            }
+
+            double distanceSq = MC.thePlayer.getDistanceSqToEntity(entity);
+
+            if (distanceSq <= nearestDistance) {
+                nearestDistance = distanceSq;
                 nearest = entity;
             }
         }
@@ -564,136 +391,129 @@ public class RectMinerMod {
         return nearest;
     }
 
-    // =========================================================
-    // CONTROLES
-    // =========================================================
+    private void faceEntity(Entity entity) {
+        double dx = entity.posX - MC.thePlayer.posX;
+        double dz = entity.posZ - MC.thePlayer.posZ;
 
-    private float clampTurn(float angle, float maxTurn) {
-        if (angle > maxTurn) {
-            return maxTurn;
+        double targetY = entity.posY + entity.getEyeHeight();
+        double playerY = MC.thePlayer.posY + MC.thePlayer.getEyeHeight();
+        double dy = targetY - playerY;
+
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+
+        float desiredYaw = (float) (
+            Math.atan2(dz, dx) * 180.0D / Math.PI
+        ) - 90.0F;
+
+        float desiredPitch = (float) (
+            -Math.atan2(dy, horizontal) * 180.0D / Math.PI
+        );
+
+        MC.thePlayer.rotationYaw = approachAngle(
+            MC.thePlayer.rotationYaw,
+            desiredYaw,
+            MAX_TURN_PER_TICK
+        );
+
+        MC.thePlayer.rotationPitch = approachAngle(
+            MC.thePlayer.rotationPitch,
+            desiredPitch,
+            MAX_TURN_PER_TICK
+        );
+    }
+
+    private boolean isAimedAt(Entity entity) {
+        MovingObjectPosition hit = MC.objectMouseOver;
+
+        if (hit == null ||
+            hit.typeOfHit != MovingObjectPosition.MovingObjectType.ENTITY) {
+            return false;
         }
 
-        if (angle < -maxTurn) {
-            return -maxTurn;
+        return hit.entityHit == entity &&
+            Math.abs(MC.thePlayer.rotationPitch) <= 90.0F &&
+            Math.abs(MC.thePlayer.rotationYaw) <= 360.0F &&
+            Math.abs(MC.thePlayer.rotationPitch) < 90.0F;
+    }
+
+    private void tickAutoFeed() {
+        if (!autoFeedEnabled) {
+            return;
         }
 
-        return angle;
+        autoFeedTicks++;
+
+        if (autoFeedTicks >= AUTO_FEED_INTERVAL) {
+            autoFeedTicks = 0;
+            MC.thePlayer.sendChatMessage("/feed");
+            message("AutoFeed: comando /feed enviado.");
+        }
+    }
+
+    private void stopEverything() {
+        miningEnabled = false;
+        autoKillerEnabled = false;
+        autoFeedEnabled = false;
+
+        autoFeedTicks = 0;
+        mobTarget = null;
+
+        releaseMovement();
+        message("Parada de emergencia: todos los sistemas desactivados.");
+    }
+
+    private void releaseMovement() {
+        MC.gameSettings.keyBindForward.pressed = false;
+        MC.gameSettings.keyBindBack.pressed = false;
+        MC.gameSettings.keyBindLeft.pressed = false;
+        MC.gameSettings.keyBindRight.pressed = false;
+        MC.gameSettings.keyBindSprint.pressed = false;
+        MC.gameSettings.keyBindJump.pressed = false;
+        MC.gameSettings.keyBindAttack.pressed = false;
+    }
+
+    private float approachAngle(float current, float target, float maxChange) {
+        float difference = wrapAngle(target - current);
+
+        if (difference > maxChange) {
+            difference = maxChange;
+        }
+
+        if (difference < -maxChange) {
+            difference = -maxChange;
+        }
+
+        return current + difference;
     }
 
     private float wrapAngle(float angle) {
-        while (angle < -180.0F) {
+        while (angle <= -180.0F) {
             angle += 360.0F;
         }
 
-        while (angle >= 180.0F) {
+        while (angle > 180.0F) {
             angle -= 360.0F;
         }
 
         return angle;
     }
 
-    private void setAttack(boolean pressed) {
-        if (MC.gameSettings == null) {
-            return;
-        }
-
-        KeyBinding.setKeyBindState(
-            MC.gameSettings.keyBindAttack.getKeyCode(),
-            pressed
-        );
-    }
-
-    private void setForward(boolean pressed) {
-        if (MC.gameSettings == null) {
-            return;
-        }
-
-        KeyBinding.setKeyBindState(
-            MC.gameSettings.keyBindForward.getKeyCode(),
-            pressed
-        );
-
-        if (!pressed) {
-            KeyBinding.setKeyBindState(
-                MC.gameSettings.keyBindBack.getKeyCode(),
-                false
-            );
-
-            KeyBinding.setKeyBindState(
-                MC.gameSettings.keyBindLeft.getKeyCode(),
-                false
-            );
-
-            KeyBinding.setKeyBindState(
-                MC.gameSettings.keyBindRight.getKeyCode(),
-                false
-            );
-
-            KeyBinding.setKeyBindState(
-                MC.gameSettings.keyBindJump.getKeyCode(),
-                false
-            );
-        }
-    }
-
-    private void releaseControls() {
-        setAttack(false);
-        setForward(false);
-    }
-
-    private void emergencyStop() {
-        running = false;
-        autoKillerRunning = false;
-
-        currentTarget = null;
-        mobTarget = null;
-
-        targets.clear();
-        targetIndex = 0;
-
-        releaseControls();
-
-        chat("Parada de emergencia: RectMiner y AutoKiller detenidos.");
-    }
-
-    private void chat(String message) {
+    private void message(String text) {
         if (MC.thePlayer != null) {
-            MC.thePlayer.addChatMessage(
-                new ChatComponentText("[RectMiner] " + message)
-            );
+            MC.thePlayer.addChatMessage(new ChatComponentText(text));
         }
     }
 
-    private static final class Pos {
+    private static class BlockPos {
         final int x;
         final int y;
         final int z;
 
-        Pos(int x, int y, int z) {
+        BlockPos(int x, int y, int z) {
             this.x = x;
             this.y = y;
             this.z = z;
         }
-
-        @Override
-        public String toString() {
-            return x + ", " + y + ", " + z;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (!(o instanceof Pos)) {
-                return false;
-            }
-
-            Pos p = (Pos) o;
-
-            return x == p.x && y == p.y && z == p.z;
-        }
-
-        @Override
-        public int hashCode() {
-            return (x * 31 + y) * 31 + z;
-        }
     }
 }
+```
