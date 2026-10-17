@@ -62,7 +62,7 @@ public class RectMinerMod {
     private static final int STUCK_TIMEOUT = 20 * 45;
 
     // AutoFeed: 10 minutos y 30 segundos a 20 ticks por segundo
-    private static final int AUTO_FEED_INTERVAL = 20 * 700;
+    private static final int AUTO_FEED_INTERVAL = 20 * 660;
 
     // RectMiner
     private static final double MINING_REACH = 1.5D;
